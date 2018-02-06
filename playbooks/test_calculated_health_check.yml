@@ -1,0 +1,43 @@
+- name: Test create calc health check
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+
+  tasks:
+    #- include: gather_facts.yaml
+    #  when: not vpc_id
+
+    - name: Create Test Calc Health Check
+      route53_health_check_ex:
+
+        # CALCULATED:
+        #threshold: 3
+        #action: create_calculated
+        #health_check_ids: ["89df575d-6359-42de-8cd7-3a1190c10a17","b9335540-d3b8-42bf-be37-5223d873f5ae"]
+
+        #TAGS:
+        #action: tags
+        #health_check_id: "89df575d-6359-42de-8cd7-3a1190c10a17"
+        #tags: {Name: "Test 1", TestTag: "123"}
+
+        #HTTPS:
+        action: create_https
+        threshold: 3
+        request_interval: 10
+        fqdn: "test.com"
+        port: 443
+        resource_path: "/Control/PopDnsAddress?CWCResourceLocation=63f914c2-7055-430a-a875-e5103634f690&CWCCustomer=ELB_HEALTH"
+
+        
+      register: calc_health_check
+
+    - debug: msg="{{ calc_health_check }}"
+    - debug: msg="{{ calc_health_check.result.HealthCheck.Id }}"
+
+    - name: Tags Test Calc Health Check
+      route53_health_check_ex:
+        action: tags
+        health_check_id: "{{ calc_health_check.result.HealthCheck.Id }}"
+        tags: {Name: "Test 2", TestTag: "123"}
+      #register: calc_health_check_result

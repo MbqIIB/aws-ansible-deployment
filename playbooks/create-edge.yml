@@ -1,0 +1,188 @@
+- name: Creating edge node
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+
+  vars:
+    sg_name: "{{ edge_sg_name }}"
+
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+    - name: Gather internal controller ELB DNS name
+      ec2_elb_facts:
+        region: "{{ aws_region }}"
+        names: "Ctrl-Int-ELB-{{ naming }}"
+        vpc_id: "{{ vpc_id }}"
+      register: ctrl_int_elb_facts
+      when: edge_uses_internal_elb
+
+    - set_fact:
+        ctrl_ip: "{{ ctrl_int_elb_facts.elbs.0.dns_name }}"
+      when: edge_uses_internal_elb
+
+    # This is necessary if the edge depends on the controller and the controller depends on the edge
+    - ec2_eni_facts:
+        region: "{{ aws_region }}"
+        filters:
+            group-name: "{{ edge_sg_name }}"
+            subnet-id: "{{ snip_net_id }}"
+            status: "available"
+      register: edge_vip_eni
+      when: ctrl_depends_on_edge
+
+    - set_fact:
+        edge_vip_eni_id: "{{ edge_vip_eni.network_interfaces.0.network_interface_id }}"
+      when: ctrl_depends_on_edge
+
+    - fail:
+        msg="Please deploy a controller instance first."
+      when: not edge_vip_eni.network_interfaces
+
+
+
+    - name: Create ENI for eth0 on Edge instances edge
+      ec2_eni:
+        region: "{{ aws_region }}"
+        state: present
+        secondary_private_ip_address_count: 3
+        subnet_id: "{{ snip_net_id }}"
+        security_groups:
+          - "{{ edge_sg_name }}" #"{{ edge_sg_name }}"
+      register: edge_vip_eni
+      when: not ctrl_depends_on_edge
+
+    - debug: msg="{{ edge_vip_eni }}"
+
+    - name: Check ENI for eth0 on Edge instances edge created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ edge_vip_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: edge_vip_eni_checker
+      when: not ctrl_depends_on_edge
+
+    - debug: msg="{{ edge_vip_eni_checker }}"
+
+    - set_fact:
+        edge_vip_eni_id: "{{ edge_vip_eni.interface.id }}"
+      when: not ctrl_depends_on_edge
+
+
+
+
+    - name: Find a controller node IP address - edge not capable of using internal ELB
+      ec2_remote_facts:
+        region: "{{ aws_region }}"
+        filters:
+          vpc_id: "{{ vpc_id }}"
+          "tag:node_type": controller
+          "tag:environment": "{{ naming }}"
+      register: controller_instances
+      when: ctrl_depends_on_edge
+  
+    - fail:
+        msg="Please deploy a controller instance first."
+      when: not controller_instances.instances
+
+    - set_fact:
+        ctrl_ip: "{{ controller_instances.instances.0.private_ip_address }}"
+      when: not edge_uses_internal_elb
+
+    #End circular dependency handling
+
+    - set_fact:
+        edge_user_data: |
+          nws_controller_ip="{{ ctrl_ip }}"
+          nws_controller_port="8080"
+          nws_flowdirector_mode="1"
+          environment="{{ test_environment }}"    
+          node_type="edge"
+
+
+
+    - name: Create Edge Management ENIs
+      ec2_eni:
+        subnet_id: "{{ mgmt_net_id }}"
+        state: present
+        region: "{{ aws_region }}"
+        security_groups:
+          - "{{ sg_name }}" #"{{ edge_sg_name }}"
+      register: edge_mgmt_eni
+      #ignore_errors: True
+
+    - name: Check Edge Management ENIs created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ edge_mgmt_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: edge_mgmt_eni_checker
+
+    - debug: msg="{{ edge_mgmt_eni_checker }}"
+
+    - name: Create Edge SNIP ENIs
+      ec2_eni:
+        state: present
+        subnet_id: "{{ vip_net_id }}"
+        region: "{{ aws_region }}"
+        security_groups:
+          - "{{ sg_name }}" #"{{ edge_sg_name }}"
+      register: edge_snip_eni
+      #ignore_errors: True
+
+    - name: Check Edge SNIP ENIs created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ edge_snip_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: edge_snip_eni_checker
+
+    - debug: msg="{{ edge_snip_eni_checker }}"
+
+    - name: Allocate and assign Elastic IP to SNIP ENI
+      ec2_eip: 
+        region: "{{ aws_region }}"
+        reuse_existing_ip_allowed: yes
+        device_id: "{{ edge_snip_eni.interface.id }}"
+
+    - name: Create Edge instances 
+      ec2:
+        key_name: "{{ ssh_key_name }}"
+        instance_type: m3.xlarge
+        image: "{{ sn_ami_id }}"
+        wait: no
+        network_interfaces: 
+            - "{{ edge_vip_eni_id }}"
+            - "{{ edge_snip_eni.interface.id }}"
+            - "{{ edge_mgmt_eni.interface.id }}"
+
+        region: "{{ aws_region }}"
+        instance_tags:
+          Name: "{{ naming }}-Edge"
+          node_type: edge
+          Service: Gateway
+        user_data: "{{ edge_user_data }}"
+        count_tag:
+          node_type: edge 
+      register: edge_info
+
+    - name: Check Edge created
+      ec2_resource_checker:
+        type: instance
+        id: "{{ edge_info.instance_ids.0 }}"
+        region: "{{ aws_region }}"
+      register: edge_instance_checker
+
+    - debug: msg="{{ edge_instance_checker }}"
+
+    - name: Add new edge instance to ELBs
+      ec2_elb:
+        region: "{{ aws_region }}"
+        ec2_elbs: "Edge-ELB-{{ naming }}"
+        state: present
+        instance_id: "{{ edge_info.instance_ids.0 }}"
+        wait: no 
+      
+

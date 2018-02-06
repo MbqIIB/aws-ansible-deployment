@@ -1,0 +1,132 @@
+#Setting region specific variables - currently only supporting us-east, us-west, eu-central
+- set_fact:
+    jump_ami_id: ami-d1315fb1
+    dns_prefix: "us-w"
+  when: aws_region == "us-west-1"
+
+- set_fact:
+    jump_ami_id: ami-2051294a
+    dns_prefix: "us-e"
+  when: aws_region == "us-east-1"
+
+- set_fact:
+    jump_ami_id: ami-775e4f16
+  when: aws_region == "us-west-2"
+
+- set_fact:
+    jump_ami_id: ami-8b8c57f8
+  when: aws_region == "eu-west-1"
+
+- set_fact:
+    jump_ami_id: ami-875042eb
+    dns_prefix: "eu-c"
+  when: aws_region == "eu-central-1"
+
+- set_fact:
+    jump_ami_id: ami-0dd8f963
+  when: aws_region == "ap-northeast-1"  
+
+- set_fact:
+    jump_ami_id: ami-44db152a
+  when: aws_region == "ap-northeast-2"  
+
+- set_fact:
+    jump_ami_id: ami-3f03c55c
+  when: aws_region == "ap-southeast-1"  
+
+- set_fact:
+    jump_ami_id: ami-e0c19f83
+  when: aws_region == "ap-southeast-2"  
+
+- set_fact:
+    jump_ami_id: ami-cdbdd7a2
+  when: aws_region == "ap-south-1"   
+
+- set_fact:
+    jump_ami_id: ami-27b3094b
+  when: aws_region == "sa-east-1"   
+
+- set_fact:
+    dns_suffix: "nssvcstesting"
+    dns_suffix2: "net"
+  when: test_environment == "testing"
+
+- set_fact:
+    dns_suffix: "nssvcstaging"
+    dns_suffix2: "net"
+  when: test_environment == "staging"
+
+- set_fact:
+    dns_suffix: "nssvc"
+    dns_suffix2: "net"
+  when: test_environment == "production"
+
+  
+
+- name: Find AMIs to use for controller instances
+  ec2_ami_find:
+    region: "{{ aws_region }}"
+    ami_tags:
+      ami_type: ctrl_latest
+  register: ctrl_ami
+
+- name: Find AMIs to use for sn/edge instances
+  ec2_ami_find:
+    region: "{{ aws_region }}"
+    ami_tags:
+      ami_type: sn_latest
+  register: sn_ami
+
+- name: Find AMIs to use for Redis instances
+  ec2_ami_find:
+    region: "{{ aws_region }}"
+    ami_tags:
+      ami_type: redis_latest
+  register: redis_ami
+
+
+- set_fact:
+    ctrl_ami_id: "{{ ctrl_ami.results.0.ami_id }}"
+    sn_ami_id: "{{ sn_ami.results.0.ami_id }}"
+    redis_ami_id: "{{ redis_ami.results.0.ami_id }}"
+
+- name: Find VPC for the given environment+suffix
+  ec2_vpc_net_facts:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:environment": "{{ naming }}"
+  register: vpc
+
+
+
+
+- ec2_vpc_subnet_facts:
+    region: "{{ aws_region }}"
+    filters:
+      vpc-id: "{{ vpc.vpcs.0.id }}"
+      "tag:net_type": mgmt_net
+  register: mgmt_net
+   
+
+- ec2_vpc_subnet_facts:
+    region: "{{ aws_region }}"
+    filters:
+      vpc-id: "{{ vpc.vpcs.0.id }}"
+      "tag:net_type": vip_net
+  register: vip_net
+  
+
+- ec2_vpc_subnet_facts:
+    region: "{{ aws_region }}"
+    filters:
+      vpc-id: "{{ vpc.vpcs.0.id }}"
+      "tag:net_type": snip_net
+  register: snip_net
+  
+- set_fact:
+    snip_net_id: "{{ snip_net.subnets.0.id }}"
+    vip_net_id: "{{ vip_net.subnets.0.id }}"
+    mgmt_net_id: "{{ mgmt_net.subnets.0.id }}"
+
+- set_fact:
+    vpc_id: "{{ vpc.vpcs.0.id }}"

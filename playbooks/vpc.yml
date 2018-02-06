@@ -1,0 +1,85 @@
+- name: Create NGS VPC
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  tasks:
+
+    - name: Create VPC and 3 subnets
+      ec2_vpc:
+        cidr_block: 172.16.0.0/16
+        internet_gateway: true
+        region: "{{ aws_region }}"
+        resource_tags: {Name: "{{ naming }}", environment: "{{ naming }}", Service: Gateway}
+        state: present
+        subnets:
+        - az: "{{ aws_region }}{{ aws_avail_zone }}"
+          cidr: 172.16.0.0/24
+          resource_tags: {environment: "{{ test_environment }}", net_type: mgmt_net, Service: Gateway}
+        - az: "{{ aws_region }}{{ aws_avail_zone }}"
+          cidr: 172.16.1.0/24
+          resource_tags: {environment: "{{ test_environment }}", net_type: snip_net, Service: Gateway}
+        - az: "{{ aws_region }}{{ aws_avail_zone }}"
+          cidr: 172.16.2.0/24
+          resource_tags: {environment: "{{ test_environment }}", net_type: vip_net, Service: Gateway}
+      register: vpc
+
+    - name: Check Vpc created
+      ec2_resource_checker:
+        type: vpc
+        id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+      register: vpc_checker
+
+    - debug: msg="{{ vpc_checker }}"
+
+    - name: Check Subnets 0 created
+      ec2_resource_checker:
+        type: subnet
+        id: "{{ vpc.subnets.0.id }}"
+        region: "{{ aws_region }}"
+      register: sunbet_0_checker
+
+    - debug: msg="{{ sunbet_0_checker }}"
+
+    - name: Check Subnets 1 created
+      ec2_resource_checker:
+        type: subnet
+        id: "{{ vpc.subnets.1.id }}"
+        region: "{{ aws_region }}"
+      register: sunbet_1_checker
+
+    - debug: msg="{{ sunbet_1_checker }}"
+
+    - name: Check Subnets 2 created
+      ec2_resource_checker:
+        type: subnet
+        id: "{{ vpc.subnets.2.id }}"
+        region: "{{ aws_region }}"
+      register: sunbet_2_checker
+
+    - debug: msg="{{ sunbet_2_checker }}"
+
+    - name: Check Internet Gateway created
+      ec2_resource_checker:
+        type: internet_gateway
+        id: "{{ vpc.igw_id }}"
+        region: "{{ aws_region }}"
+      register: igw_checker
+
+    - debug: msg="{{ igw_checker }}"
+
+    - name: Add default route to VPC route table for Internet Gateway
+      ec2_vpc_route_table:
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+        subnets:
+          - "{{ vpc.subnets.0.id }}"
+          - "{{ vpc.subnets.1.id }}"
+          - "{{ vpc.subnets.2.id }}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{ vpc.igw_id }}"
+
+
+            

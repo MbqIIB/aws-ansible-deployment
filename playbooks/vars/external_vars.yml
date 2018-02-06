@@ -1,0 +1,46 @@
+# sn_ami_id: ami-86858dec #ami-af94dbcf
+# ctrl_ami_id: ami-5fa9e63f
+# redis_ami_id: ami-39c4bd59
+aws_avail_zone: a
+aws_region: us-east-1
+route53_deploy_suffix: "" # keep empty. Example:if value is "123." then all route53 record names will be like: <preffix>.123.<DNS name>
+test_environment: testing
+naming_suffix: 7002
+naming: "{{ test_environment }}-{{ naming_suffix }}"
+
+ssh_key_name: "{{ naming }}_{{ aws_region }}"
+
+
+
+
+
+#num_service_nodes: 1
+#num_controllers: 1
+#num_redis: 1
+#num_edges: 2
+edge_uses_internal_elb: false #Set this flag to indicate if the Edges support using AWS internal ELBs
+ctrl_depends_on_edge: true #Check this flag if the controller depends on the edges for multi-POP communications
+
+
+
+
+interpop_credentials: "cf7834772d65:9befa6007eb"
+
+#Security group names
+ctrl_sg_name: "Controller-SG-{{ naming }}"
+edge_sg_name: "Edge-SG-{{ naming }}"
+sn_sg_name: "ServiceNode-SG-{{ naming }}"
+redis_sg_name: "Redis-SG-{{ naming }}"
+jump_sg_name: "JumpServer-SG-{{ naming }}"
+
+edge_elb_sg_name: "Edge-ELB-SG-{{ naming }}"
+sn_elb_sg_name: "ServiceNode-ELB-SG-{{ naming }}"
+ctrl_elb_sg_name: "Controller-ELB-SG-{{ naming }}"
+ctrl_int_elb_sg_name: "Ctrl-Int-ELB-SG-{{ naming }}"
+
+#Internals
+vpc_id: false
+
+# SG list
+security_groups: []
+

@@ -1,0 +1,38 @@
+- name: Create a Redis instance
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  vars:
+    sg_name: "{{ redis_sg_name }}"
+
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+
+    - name: Create Redis instances 
+      ec2:
+        key_name: "{{ ssh_key_name }}"
+        instance_type: m3.xlarge
+        image: "{{ redis_ami_id }}"
+        wait: no
+        vpc_subnet_id: "{{ snip_net_id }}"
+        group: "{{ sg_name }}"
+        region: "{{ aws_region }}"
+        instance_tags:
+          Name: "{{ naming }}-Redis"
+          node_type: redis
+          Service: Gateway
+
+      register: redis_instance
+
+    - name: Check Redis created
+      ec2_resource_checker:
+        type: instance
+        id: "{{ redis_instance.instance_ids.0 }}"
+        region: "{{ aws_region }}"
+      register: redis_instance_checker
+
+    - debug: msg="{{ redis_instance_checker }}"
+

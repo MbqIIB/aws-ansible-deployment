@@ -1,0 +1,66 @@
+- name: Begin NGS Deployment
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  tasks:
+    - name: Create SSH keypair
+      ec2_key:
+        region: "{{ aws_region }}"
+        name: "{{ ssh_key_name }}"
+      register: ssh_key
+
+    - stat: path="./output"
+      register: st
+
+    - name: Create output folder
+      file: path=output state=directory mode=0755
+      when: st.stat.isdir is not defined
+
+    - name: Save SSH key 
+      copy: content="{{ ssh_key.key.private_key }}" dest="./output/{{ ssh_key_name }}.pem" mode=0600
+      when: ssh_key.changed
+
+
+#Create VPC and subnets
+- include: vpc.yml
+
+#Create security groups, add rules, and tag them
+- include: sg-jump.yml
+
+- include: security-groups.yml
+
+- include: create-elbs.yml
+
+- include: create-jump.yml
+
+- include: create-redis.yml
+
+- include: create-ctrl.yml #deploy controller before edge to ensure circular dependency is handled properly
+
+- include: create-edge.yml
+- include: create-sn.yml      
+
+- include: update-route53-healthchecks.yml
+
+- include: update-route53.yml
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

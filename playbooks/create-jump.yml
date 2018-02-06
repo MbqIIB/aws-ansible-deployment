@@ -1,0 +1,44 @@
+- name: Create a JumpServer instance
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  vars:
+    sg_name: "{{ jump_sg_name }}"
+
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+    - debug: msg="{{ jump_ami_id }}"
+
+    - name: Create jump server
+      ec2:
+        key_name: "{{ ssh_key_name }}"
+        instance_type: t2.micro
+        image: "{{ jump_ami_id }}"
+        wait: no
+        vpc_subnet_id: "{{ mgmt_net_id }}"
+        assign_public_ip: yes
+        group: "{{ sg_name }}"
+        region: "{{ aws_region }}"
+        instance_tags:
+          Name: "{{ naming }}-JumpServer"
+          node_type: jump
+          Service: Gateway
+        exact_count: 1
+        count_tag:
+          node_type: jump
+      register: jump_instance
+
+    - debug: msg="{{ jump_instance }}"
+
+    - name: Check jump server created
+      ec2_resource_checker:
+        type: instance
+        id: "{{ jump_instance.instance_ids.0 }}"
+        region: "{{ aws_region }}"
+      register: jump_instance_checker
+      when: "{{ jump_instance.instance_ids != None and jump_instance.instance_ids | length > 0 }}"
+
+    - debug: msg="{{ jump_instance_checker }}"

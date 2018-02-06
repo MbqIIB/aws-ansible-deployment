@@ -1,0 +1,132 @@
+- name: Create a controller instance
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  vars:
+    sg_name: "{{ ctrl_sg_name }}"
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+    - debug: msg="{{ snip_net_id }}"
+
+    - name: Debug subnet_id_debug
+      ec2_vpc_subnet_facts:
+        region: "{{ aws_region }}"
+        filters:
+          subnet-id: "{{ snip_net_id }}"
+      register: subnet_id_debug
+
+    - debug: msg="{{ subnet_id_debug }}"
+
+    - name: Create ENI for eth0 on Edge instances ctrl
+      ec2_eni:
+        region: "{{ aws_region }}"
+        state: present
+        secondary_private_ip_address_count: 3
+        subnet_id: "{{ snip_net_id }}"
+        security_groups:
+          - "{{ edge_sg_name }}" #"{{ edge_sg_name }}"
+      register: edge_eni
+      when: ctrl_depends_on_edge
+
+    - debug: msg="{{ edge_eni }}"
+
+    - name: Check ENI for eth0 on Edge instances ctrl created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ edge_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: edge_eni_checker
+
+    - debug: msg="{{ edge_eni_checker }}"
+
+    - name: Find private IPs on Edge ENI
+      ec2_eni_facts:
+        region: "{{ aws_region }}"
+        filters:
+          network-interface-id: "{{ edge_eni.interface.id }}"
+      register: edge_vip_eni
+      when: ctrl_depends_on_edge
+
+    - name: Gather internal controller ELB facts
+      ec2_elb_facts:
+        region: "{{ aws_region }}"
+        names: "Ctrl-Int-ELB-{{ naming }}"
+      register: ctrl_int_elb_facts
+
+    - name: Find a Redis instance
+      ec2_remote_facts:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:node_type": redis
+      register: all_redis
+
+
+    - set_fact:
+        redis: "{{ all_redis.instances | rejectattr('state', 'equalto', 'terminated') | list }} "
+
+    - set_fact:
+        redis_node_ip: "{{ redis.0.private_ip_address }}"
+
+   
+    - set_fact:
+        edge_vip1: "{{ edge_vip_eni.network_interfaces.0.private_ip_addresses.1.private_ip_address }}"
+        edge_vip2: "{{ edge_vip_eni.network_interfaces.0.private_ip_addresses.2.private_ip_address }}"
+      when: ctrl_depends_on_edge
+
+    - set_fact:
+        ctrl_user_data: |
+          external_pop1_fqdn="{{ edge_vip1 }}"
+          external_pop2_fqdn="{{ edge_vip2 }}"
+          interpop_credentials="{{ interpop_credentials }}"
+          environment="{{ test_environment }}"
+          redis_node_ip="{{ redis_node_ip }}"    
+
+
+    - name: Create Controller instances 
+      ec2:
+        key_name: "{{ ssh_key_name }}"
+        state: present
+        instance_type: m3.xlarge
+        image: "{{ ctrl_ami_id }}"
+        wait: no
+        vpc_subnet_id: "{{ snip_net_id }}"
+        group: "{{ sg_name }}"
+        assign_public_ip: yes
+
+        region: "{{ aws_region }}"
+        instance_tags:
+          Name: "{{ naming }}-Controller"
+          node_type: controller
+          environment: "{{ naming }}"
+          Service: Gateway
+        user_data: "{{ ctrl_user_data }}"
+      register: ctrl_info
+
+    - name: Check Controller created
+      ec2_resource_checker:
+        type: instance
+        id: "{{ ctrl_info.instance_ids.0 }}"
+        region: "{{ aws_region }}"
+      register: ctrl_instance_checker
+
+    - debug: msg="{{ ctrl_instance_checker }}"
+
+    - name: Add new controller instance to ELBs
+      ec2_elb:
+        region: "{{ aws_region }}"
+        ec2_elbs: "{{ item }}"
+        state: present
+        instance_id: "{{ ctrl_info.instance_ids.0 }}"
+        wait: no
+      with_items:
+        - "Controller-ELB-{{ naming }}"
+        - "Ctrl-Int-ELB-{{ naming }}"
+
+
+
+
+
+

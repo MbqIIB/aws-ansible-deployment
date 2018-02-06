@@ -1,0 +1,127 @@
+- name: Create all ELBs
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+    - name: Create Edge ELB
+      ec2_elb_lb:
+        name: "Edge-ELB-{{ naming }}"
+        state: present
+        security_group_names: 
+          - "{{ edge_elb_sg_name }}"
+        region: "{{ aws_region }}"
+        purge_instance_ids: true
+        idle_timeout: 3600
+        subnets:
+          - "{{ snip_net_id }}"
+        purge_listeners: true
+        listeners:
+          - protocol: tcp
+            load_balancer_port: 443
+            instance_port: 443
+        health_check:
+          ping_protocol: tcp
+          ping_port: 443
+          response_timeout: 5
+          interval: 10
+          unhealthy_threshold: 2
+          healthy_threshold: 2
+        tags:
+          elb_type: "edge"
+
+
+
+    - name: Create Controller ELB
+      ec2_elb_lb:
+        name: "Controller-ELB-{{ naming }}"
+        state: present
+        security_group_names: 
+          - "{{ ctrl_elb_sg_name }}"
+        region: "{{ aws_region }}"
+        purge_instance_ids: true
+        idle_timeout: 60
+        subnets:
+          - "{{ snip_net_id }}"
+        purge_listeners: true
+        listeners:
+          - protocol: tcp
+            load_balancer_port: 443
+            instance_port: 8443
+          - protocol: tcp
+            load_balancer_port: 9443
+            instance_port: 9443
+          - protocol: tcp
+            load_balancer_port: 8666
+            instance_port: 8666
+        health_check:
+          ping_protocol: http
+          ping_port: 8666
+          ping_path: "/Control/Ping"
+          response_timeout: 5
+          interval: 10
+          unhealthy_threshold: 2
+          healthy_threshold: 2
+        tags:
+          elb_type: "controller"
+
+
+
+    - name: Create Service Node ELB
+      ec2_elb_lb:
+        name: "ServiceNode-ELB-{{ naming }}"
+        state: present
+        security_group_names: 
+          - "{{ sn_elb_sg_name }}"
+        region: "{{ aws_region }}"
+        purge_instance_ids: true
+        idle_timeout: 3600
+        subnets:
+          - "{{ vip_net_id }}"
+        purge_listeners: true
+        listeners:
+          - protocol: tcp
+            load_balancer_port: 443
+            instance_port: 443
+        health_check:
+          ping_protocol: https
+          ping_port: 443
+          ping_path: "/Control/Ping"
+          response_timeout: 5
+          interval: 10
+          unhealthy_threshold: 2
+          healthy_threshold: 2
+        tags:
+          elb_type: "service_node"
+
+
+    - name: Create Controller Internal ELB
+      ec2_elb_lb:
+        name: "Ctrl-Int-ELB-{{ naming }}"
+        state: present
+        subnets:
+          - "{{ snip_net_id }}"
+        security_group_names: 
+          - "{{ ctrl_int_elb_sg_name }}"
+        region: "{{ aws_region }}"
+        purge_instance_ids: true
+        scheme: "internal"
+        idle_timeout: 3600
+        purge_listeners: true
+        listeners:
+          - protocol: tcp
+            load_balancer_port: 8080
+            instance_port: 8080
+        health_check:
+          ping_protocol: tcp
+          ping_port: 8080
+          response_timeout: 5
+          interval: 10
+          unhealthy_threshold: 2
+          healthy_threshold: 2
+        tags:
+          elb_type: "ctrl-internal"
+

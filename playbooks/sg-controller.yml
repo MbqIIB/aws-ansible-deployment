@@ -1,0 +1,79 @@
+- name: Add Controller SG rules
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+    - name: Add controller security group rules
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ ctrl_sg_name }}"
+        description: Security group for Controller devices
+        vpc_id: "{{ vpc_id }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            group_name: "{{ jump_sg_name }}"
+          - proto: tcp
+            from_port: 8080
+            to_port: 8080
+            group_name: "{{ edge_sg_name }}"
+          - proto: tcp
+            from_port: 9443
+            to_port: 9443
+            group_name: "{{ ctrl_elb_sg_name }}"
+          - proto: tcp
+            from_port: 8443
+            to_port: 8443
+            group_name: "{{ ctrl_elb_sg_name }}"
+          - proto: tcp
+            from_port: 8080
+            to_port: 8080
+            group_name: "{{ ctrl_int_elb_sg_name }}"
+          - proto: tcp
+            from_port: 8010
+            to_port: 8010
+            group_name: "{{ ctrl_sg_name }}"
+          #Monitoring ports - going to Python monitoring script          
+          - proto: tcp
+            from_port: 8666
+            to_port: 8666
+            group_name: "{{ ctrl_elb_sg_name }}"
+
+        rules_egress:
+          - proto: tcp
+            from_port: 6379
+            to_port: 6379
+            group_name: "{{ redis_sg_name }}"
+          # - proto: tcp
+          #   from_port: 9443
+          #   to_port: 9443
+          #   cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 9443
+            to_port: 9443
+            group_name: "{{ edge_sg_name }}"
+          - proto: udp
+            from_port: 53
+            to_port: 53
+            cidr_ip: 172.16.0.2/32
+          - proto: tcp
+            from_port: 53
+            to_port: 53
+            cidr_ip: 172.16.0.2/32
+          - proto: tcp
+            from_port: 443
+            to_port: 443
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 8010
+            to_port: 8010
+            group_name: "{{ ctrl_sg_name }}"
+
+        purge_rules: true
+        purge_rules_egress: true
+

@@ -1,0 +1,133 @@
+- name: Create a service node instance
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  vars:
+    sg_name: "{{ sn_sg_name }}"
+
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+
+    - name: Gather internal controller ELB DNS name
+      ec2_elb_facts:
+        region: "{{ aws_region }}"
+        names: "Ctrl-Int-ELB-{{ naming }}"
+      register: ctrl_int_elb_facts
+
+    - set_fact:
+        ctrl_ip: "{{ ctrl_int_elb_facts.elbs.0.dns_name }}"
+
+    - set_fact:
+        sn_user_data: |
+          nws_controller_ip="{{ ctrl_ip }}"
+          nws_controller_port="8080"
+          environment="{{ test_environment }}"    
+          node_type="service"
+
+    - name: Create ENI for eth0 on ServiceNode instances
+      ec2_eni:
+        region: "{{ aws_region }}"
+        state: present
+        subnet_id: "{{ vip_net_id }}"
+        security_groups:
+          - "{{ sg_name }}" 
+      register: sn_vip_eni
+
+    - name: Check ENI for eth0 on ServiceNode instances created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ sn_vip_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: sn_vip_eni_checker
+
+    - debug: msg="{{ sn_vip_eni_checker }}"
+
+    - name: Create ServiceNode Management ENIs
+      ec2_eni:
+        subnet_id: "{{ mgmt_net_id }}"
+        state: present
+        region: "{{ aws_region }}"
+        security_groups:
+          - "{{ sg_name }}"
+      register: sn_mgmt_eni
+      #ignore_errors: True
+
+    - name: Check ServiceNode Management ENIs created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ sn_mgmt_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: sn_mgmt_eni_checker
+
+    - debug: msg="{{ sn_mgmt_eni_checker }}"
+
+    - name: Create ServiceNode SNIP ENIs
+      ec2_eni:
+        state: present
+        subnet_id: "{{ snip_net_id }}"
+        region: "{{ aws_region }}"
+        security_groups:
+          - "{{ sg_name }}" #"{{ edge_sg_name }}"
+      register: sn_snip_eni
+      #ignore_errors: True
+
+    - name: Check ServiceNode SNIP ENIs created
+      ec2_resource_checker:
+        type: network_interface
+        id: "{{ sn_snip_eni.interface.id }}"
+        region: "{{ aws_region }}"
+      register: sn_snip_eni_checker
+
+    - debug: msg="{{ sn_snip_eni_checker }}"
+
+    - name: Allocate and assign Elastic IP to SNIP ENI
+      ec2_eip: 
+        region: "{{ aws_region }}"
+        reuse_existing_ip_allowed: yes
+        device_id: "{{ sn_snip_eni.interface.id }}"
+
+    - name: Create ServiceNode instances 
+      ec2:
+        key_name: "{{ ssh_key_name }}"
+        instance_type: m3.large
+        image: "{{ sn_ami_id }}"
+        wait: no
+        network_interfaces: 
+            - "{{ sn_vip_eni.interface.id }}"
+            - "{{ sn_snip_eni.interface.id }}"
+            - "{{ sn_mgmt_eni.interface.id }}"
+
+        region: "{{ aws_region }}"
+        instance_tags:
+          Name: "{{ naming }}-ServiceNode"
+          node_type: service
+          Service: Gateway
+        user_data: "{{ sn_user_data }}"
+      register: sn_info
+
+    - name: Check ServiceNode created
+      ec2_resource_checker:
+        type: instance
+        id: "{{ sn_info.instance_ids.0 }}"
+        region: "{{ aws_region }}"
+      register: jsn_instance_checker
+
+    - debug: msg="{{ jsn_instance_checker }}"
+
+    - name: Add new ServiceNode instance to ELBs
+      ec2_elb:
+        region: "{{ aws_region }}"
+        ec2_elbs: "ServiceNode-ELB-{{ naming }}"
+        state: present
+        instance_id: "{{ sn_info.instance_ids.0 }}"
+        wait: no
+
+
+
+
+
+
+

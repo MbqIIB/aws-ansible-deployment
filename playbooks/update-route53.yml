@@ -1,0 +1,198 @@
+- name: Create a controller instance
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  vars:
+    sg_name: "{{ ctrl_sg_name }}"
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+    - name: Gather Edge ELB DNS name
+      ec2_elb_facts:
+        region: "{{ aws_region }}"
+        names: "Edge-ELB-{{ naming }}"
+      register: edge_elb_facts
+
+    - set_fact:
+        edge_elb_dns: "{{ edge_elb_facts.elbs.0.dns_name }}"
+
+    - name: Create Edge DNS Record 
+      route53:
+        command: create
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "aws-{{ dns_prefix }}-rdvz.g.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "{{ edge_elb_dns }}"
+        overwrite: yes
+
+    - name: Gather ServiceNode ELB DNS name
+      ec2_elb_facts:
+        region: "{{ aws_region }}"
+        names: "ServiceNode-ELB-{{ naming }}"
+      register: sn_elb_facts
+
+    - set_fact:
+        sn_elb_dns: "{{ sn_elb_facts.elbs.0.dns_name }}"
+
+    - name: Create Service Node DNS Record 
+      route53:
+        command: create
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "aws-{{ dns_prefix }}.g.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "{{ sn_elb_dns }}"
+        overwrite: yes
+
+    - name: Gather Controller ELB DNS name
+      ec2_elb_facts:
+        region: "{{ aws_region }}"
+        names: "Controller-ELB-{{ naming }}"
+      register: ctrl_elb_facts
+
+    - set_fact:
+        ctrl_elb_dns: "{{ ctrl_elb_facts.elbs.0.dns_name }}"
+
+    - name: Create Controller API DNS Record 
+      route53:
+        command: create
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "aws-{{ dns_prefix }}-api.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "{{ ctrl_elb_dns }}"
+        overwrite: yes
+
+    - name: Create Controller connector registration DNS Record 
+      route53:
+        command: create
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "aws-{{ dns_prefix }}-reg.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "{{ ctrl_elb_dns }}"
+        overwrite: yes
+
+
+
+    - name: Find Route53 Zone ID
+      route53_facts:
+        query: hosted_zone
+      register: hosted_zones
+
+    - set_fact: 
+        zonename: "{{ dns_suffix }}.{{ dns_suffix2 }}."
+        global_api_record_name: "api.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}."
+        global_api_record_identifier: "{{ aws_region }}-ctrl-api"
+
+        global_reg_record_name: "reg.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}."
+        global_reg_record_identifier: "{{ aws_region }}-ctrl-reg"
+
+        global_sn_record_name: "global.g.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}."
+        global_sn_record_identifier: "{{ aws_region }}-sn"
+
+    - set_fact:
+        zone_id: "{{ hosted_zones.HostedZones | selectattr('Name', 'equalto', zonename) | map(attribute='Id') | list  }}"
+
+
+    - name: Try to find existing DNS records so the global ones can be deleted and recreated
+      route53_facts:
+        query: record_sets
+        hosted_zone_id: "{{ zone_id.0 }}"
+        type: CNAME
+        start_record_name: "{{ global_api_record_name }}"
+      register: dns_records
+
+    - set_fact:
+        global_api_record: "{{ dns_records.ResourceRecordSets | selectattr('Name', 'equalto', global_api_record_name) | selectattr('SetIdentifier', 'equalto', global_api_record_identifier) | list }} "
+        global_reg_record: "{{ dns_records.ResourceRecordSets | selectattr('Name', 'equalto', global_reg_record_name) | selectattr('SetIdentifier', 'equalto', global_reg_record_identifier) | list }} "
+        global_sn_record: "{{ dns_records.ResourceRecordSets | selectattr('Name', 'equalto', global_sn_record_name) | selectattr('SetIdentifier', 'equalto', global_sn_record_identifier) | list }} "
+
+    - name: Delete existing global Controller API DNS records
+      route53:
+        command: delete
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "{{ item.Name }}"
+        ttl: "{{ item.TTL }}"
+        type: "{{ item.Type }}"
+        region: "{{ item.Region }}"
+        value: "{{ item.ResourceRecords.0.Value }}"
+        identifier: "{{ item.SetIdentifier }}"
+      with_items:
+        - "{{ global_api_record }}"
+      when: global_api_record is defined
+
+    - name: Delete existing global Controller Registration DNS records
+      route53:
+        command: delete
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "{{ item.Name }}"
+        ttl: "{{ item.TTL }}"
+        type: "{{ item.Type }}"
+        region: "{{ item.Region }}"
+        value: "{{ item.ResourceRecords.0.Value }}"
+        identifier: "{{ item.SetIdentifier }}"
+      with_items:
+        - "{{ global_reg_record }}"
+      when: global_reg_record is defined
+
+
+
+    - name: Delete existing global service node DNS records
+      route53:
+        command: delete
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "{{ item.Name }}"
+        ttl: "{{ item.TTL }}"
+        type: "{{ item.Type }}"
+        region: "{{ item.Region }}"
+        value: "{{ item.ResourceRecords.0.Value }}"
+        identifier: "{{ item.SetIdentifier }}"
+      with_items:
+        - "{{ global_sn_record }}"
+      when: global_sn_record.0 is defined
+
+
+    - name: Create Controller GLOBAL connector registration DNS Record 
+      route53:
+        command: create
+        region: "{{ aws_region }}"
+        identifier: "{{ aws_region }}-ctrl-reg"
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "reg.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "aws-{{ dns_prefix }}-reg.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        overwrite: yes
+        health_check: "{{ calculated_health_check.result.HealthCheck.Id }}"
+      ignore_errors: true
+
+    - name: Create Controller GLOBAL API DNS Record 
+      route53:
+        command: create
+        region: "{{ aws_region }}"
+        identifier: "{{ aws_region }}-ctrl-api"
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "api.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "aws-{{ dns_prefix }}-reg.c.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        overwrite: yes
+        health_check: "{{ calculated_health_check.result.HealthCheck.Id }}"
+
+
+    - name: Create ServiceNode GLOBAL DNS Record 
+      route53:
+        command: create
+        region: "{{ aws_region }}"
+        identifier: "{{ aws_region }}-sn"
+        zone: "{{ dns_suffix }}.{{ dns_suffix2 }}"
+        record: "global.g.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        ttl: 30
+        type: CNAME
+        value: "aws-{{ dns_prefix }}.g.{{ route53_deploy_suffix }}{{ dns_suffix }}.{{ dns_suffix2 }}"
+        overwrite: yes
+        health_check: "{{ calculated_health_check.result.HealthCheck.Id }}"

@@ -1,0 +1,75 @@
+- name: Provision a VPC with public/private subnets and an IGW
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  tasks:
+    #Create VPC and subnets
+    - include: vpc.yml
+    #Create security groups, add rules, and tag them
+    - include: security-groups.yml
+
+    - name: Create SSH keypair
+      ec2_key:
+        region: "{{ aws_region }}"
+        name: "{{ ssh_key_name }}"
+      register: ssh_key
+
+    - name: Save SSH key 
+      copy: content="{{ ssh_key.key.private_key }}" dest="./output/{{ test_environment }}.pem" mode=0600
+      when: ssh_key.changed
+
+    - name: Gather subnet IDs by subnet type
+      ec2_vpc_subnet_facts:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc.vpc_id }}"
+          "tag:net_type": "{{ item }}"
+      with_items:
+        - mgmt_net
+        - snip_net
+        - vip_net
+
+      register: subnets
+
+    - set_fact:
+        mgmt_net_id: "{{ subnets['results'][0]['subnets'][0]['id'] }}"
+    - set_fact:
+        snip_net_id: "{{ subnets['results'][1]['subnets'][0]['id'] }}"
+    - set_fact:
+        vip_net_id: "{{ subnets['results'][2]['subnets'][0]['id'] }}"
+
+
+
+    - include: create-jump.yml
+
+    - include: create-redis.yml
+
+    - include: create-ctrl.yml
+
+    - include: create-edge.yml
+
+    - include: create-sn.yml      
+
+    - include: create-elbs.yml
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

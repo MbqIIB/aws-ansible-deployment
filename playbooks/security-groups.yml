@@ -1,0 +1,227 @@
+- name: Update service node security group rules
+  hosts: localhost
+  connection: local
+  vars_files:
+    - vars/external_vars.yml
+  tasks:
+    - include: gather_facts.yaml
+      when: not vpc_id
+
+#This file first creates blanks security groups
+#Then, it fills in the rules since references to other security groups are used to control traffic
+
+    - name: Create Edge security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ edge_sg_name }}"
+        description: Security group for Edge devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: edge_sg
+
+    - name: Check Edge security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ edge_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: edge_sg_checker
+
+    - debug: msg="{{ edge_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ edge_sg }}]"
+
+    - name: Create Edge ELB security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ edge_elb_sg_name }}"
+        description: Security group for Edge ELB devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: edge_elb_sg
+
+    - name: Check Edge ELB security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ edge_elb_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: edge_elb_sg_checker
+
+    - debug: msg="{{ edge_elb_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ edge_elb_sg }}]"
+
+    - name: Create Service Node security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ sn_sg_name }}"
+        description: Security group for Service Node devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: sn_sg
+
+    - name: Check Service Node security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ sn_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: sn_sg_checker
+
+    - debug: msg="{{ sn_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ sn_sg }}]"
+
+    - name: Create Service Node ELB security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ sn_elb_sg_name }}"
+        description: Security group for Service Node ELB devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: sn_elb_sg
+
+    - name: Check Service Node ELB security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ sn_elb_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: sn_elb_sg_checker
+
+    - debug: msg="{{ sn_elb_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ sn_elb_sg }}]"
+
+    - name: Create Controller security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ ctrl_sg_name }}"
+        description: Security group for Controller devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: ctrl_sg
+
+    - name: Check Controller security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ ctrl_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: ctrl_sg_checker
+
+    - debug: msg="{{ ctrl_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ ctrl_sg }}]"
+
+    - name: Create Controller ELB security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ ctrl_elb_sg_name }}"
+        description: Security group for Service Node  ELB devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: ctrl_elb_sg
+
+    - name: Check Controller ELB security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ ctrl_elb_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: ctrl_elb_sg_checker
+
+    - debug: msg="{{ ctrl_elb_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ ctrl_elb_sg }}]"
+
+    - name: Create Redis security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ redis_sg_name }}"
+        description: Security group for Redis devices
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: redis_sg
+
+    - name: Check Redis security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ redis_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: redis_sg_checker
+
+    - debug: msg="{{ redis_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ redis_sg }}]"
+      
+    - name: Create Controller Internal ELB security group
+      ec2_group:
+        region: "{{ aws_region }}"
+        name: "{{ ctrl_int_elb_sg_name }}"
+        description: Security group for controller internal ELB
+        
+        vpc_id: "{{ vpc_id }}"
+        rules: []
+        rules_egress: []
+        purge_rules: true
+        purge_rules_egress: true
+      register: ctrl_int_elb_sg
+
+    - name: Check Controller Internal ELB security group created
+      ec2_resource_checker:
+        type: security_group
+        id: "{{ ctrl_int_elb_sg.group_id }}"
+        region: "{{ aws_region }}"
+      register: ctrl_int_elb_sg_checker
+
+    - debug: msg="{{ ctrl_int_elb_sg_checker }}"
+
+    - set_fact:
+        security_groups: "{{ security_groups }} + [{{ ctrl_int_elb_sg }}]"
+
+
+    - name: Add tags to all security groups
+      ec2_tag:
+        region: "{{ aws_region }}"
+        resource: "{{ item.group_id }}"
+        tags:
+          Service: Gateway
+      with_items: "{{ security_groups }}"    
+
+
+- include: sg-edge.yml
+- include: sg-sn.yml
+- include: sg-controller.yml
+- include: sg-redis.yml
+- include: sg-ctrl-elb.yml
